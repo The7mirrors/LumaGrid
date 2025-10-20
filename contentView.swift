@@ -706,7 +706,7 @@ private struct MixerMetrics {
                        isCompactWidth ? 50 : 74)
         
         let topPadding: CGFloat = max(6, h * 0.015)
-        let bottomPadding: CGFloat = max(10, h * 0.02) + safeBottom + 8
+        let bottomPadding: CGFloat = max(14, h * 0.02) + safeBottom + 48
         let gapKnobToSlider: CGFloat = max(4, h * 0.012)
         let gapSliderToPad: CGFloat  = max(4, h * 0.012)
         
@@ -771,25 +771,33 @@ struct MixerArea: View {
                 h: height, w: W, safeBottom: safeBottom,
                 isCompactWidth: isCompactWidth, isCompactHeight: isCompactHeight
             )
+            let knobLabels = [
+                "Swirl", "Ripple", "Warp", "Twist",
+                "Curl", "Echo", "Hue Offset", "Cell Noise"
+            ]
+            let padLabels: [String] = [
+                "", "", "Shader", "PNG", "JPEG", "GIF", "", ""
+            ]
             
             VStack(spacing: 0) {
                 // --- Top: Knobs (8 fixed columns) ---
-                LazyVGrid(columns: m.columnsFixed, alignment: .center, spacing: 12) {
+                LazyVGrid(columns: m.columnsFixed, alignment: .center, spacing: m.gridSpacing) {
                     ForEach(0..<8, id: \.self) { i in
-                        RotaryKnob(
+                        MixerKnobTile(
+                            label: knobLabels[i],
                             progress: Binding(
                                 get: { knobPositions[i] },
                                 set: { knobPositions[i] = $0 }
                             ),
-                            diameter: m.knobSize,
+                            width: m.sliderWidth,
+                            knobDiameter: m.knobSize,
                             color: MixerPalette.channel[i]
                         )
-                        .frame(width: m.sliderWidth)
                     }
                 }
                 .padding(.horizontal, m.horizontalPadding)
                 .padding(.top, m.topPadding)
-                
+
                 // --- Middle: Sliders (8 fixed columns) ---
                 LazyVGrid(columns: m.columnsFixed, spacing: m.gridSpacing) {
                     VerticalSlider(label: "Freq", value: $frequency, range: 1...25,
@@ -813,25 +821,36 @@ struct MixerArea: View {
                 .padding(.horizontal, m.horizontalPadding)
                 .padding(.top, m.gapKnobToSlider)
                 .frame(maxWidth: .infinity)
-                .frame(height: m.sliderHeight + 56)
+                .frame(height: m.sliderHeight)
                 
                 // --- Bottom: Pads (8 fixed columns) ---
-                LazyVGrid(columns: m.columnsFixed, spacing: 12) {
+                LazyVGrid(columns: m.columnsFixed, spacing: m.gridSpacing) {
                     ForEach(0..<8, id: \.self) { i in
-                        Button {
-                            if padPressed.indices.contains(i) {
-                                padPressed[i] = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { padPressed[i] = false }
+                        MixerPadTile(
+                            label: padLabels[i],
+                            width: m.sliderWidth,
+                            padSize: m.padSize,
+                            color: MixerPalette.channel[i],
+                            isPressed: Binding(
+                                get: { padPressed.indices.contains(i) ? padPressed[i] : false },
+                                set: { newValue in if padPressed.indices.contains(i) { padPressed[i] = newValue } }
+                            ),
+                            action: {
+                                if padPressed.indices.contains(i) {
+                                    padPressed[i] = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                                        if padPressed.indices.contains(i) { padPressed[i] = false }
+                                    }
+                                }
+                                switch i {
+                                case 2: exportShader()
+                                case 3: exportPNG()
+                                case 4: exportJPEG()
+                                case 5: exportGIF()
+                                default: break
+                                }
                             }
-                            if i == 2 { exportShader() }
-                            else if i == 3 { exportPNG() }
-                            else if i == 4 { exportJPEG() }
-                            else if i == 5 { exportGIF() }   // GIF
-                        } label: { Color.clear }
-                            .buttonStyle(PadButtonStyle(color: MixerPalette.channel[i],
-                                                        size: m.padSize,
-                                                        externallyPressed: padPressed[i]))
-                            .frame(width: m.sliderWidth)
+                        )
                     }
                 }
                 .padding(.horizontal, m.horizontalPadding)
@@ -848,7 +867,7 @@ struct PadButtonStyle: ButtonStyle {
     var color: Color
     var size: CGFloat = 68
     var externallyPressed: Bool = false
-    
+
     func makeBody(configuration: Configuration) -> some View {
         let down = configuration.isPressed || externallyPressed
         return configuration.label
@@ -867,6 +886,85 @@ struct PadButtonStyle: ButtonStyle {
             )
             .scaleEffect(down ? 0.98 : 1.0)
             .animation(.spring(response: 0.18, dampingFraction: 0.7), value: down)
+    }
+}
+
+// MARK: - Mixer Pad Tile
+struct MixerPadTile: View {
+    var label: String
+    var width: CGFloat
+    var padSize: CGFloat
+    var color: Color
+    @Binding var isPressed: Bool
+    var action: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(MixerPalette.panel)
+                .overlay(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.10), .clear, .clear, Color.black.opacity(0.35)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                    .mask(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                )
+                .shadow(color: Color.black.opacity(0.30), radius: 4, x: 0, y: 4)
+
+            VStack(spacing: 10) {
+                Button(action: action) {
+                    Color.clear
+                }
+                .buttonStyle(PadButtonStyle(color: color, size: padSize, externallyPressed: isPressed))
+
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+                    .opacity(label.isEmpty ? 0 : 1)
+                    .accessibilityHidden(label.isEmpty)
+            }
+            .padding(.top, 12)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 14)
+        }
+        .frame(width: width, height: padSize + 60)
+    }
+}
+
+// MARK: - Mixer Knob Tile
+struct MixerKnobTile: View {
+    var label: String
+    @Binding var progress: Double
+    var width: CGFloat
+    var knobDiameter: CGFloat
+    var color: Color
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(MixerPalette.panel)
+                .overlay(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.10), .clear, .clear, Color.black.opacity(0.35)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                    .mask(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                )
+                .shadow(color: Color.black.opacity(0.30), radius: 4, x: 0, y: 4)
+
+            VStack(spacing: 10) {
+                RotaryKnob(progress: $progress, diameter: knobDiameter, color: color)
+                Spacer(minLength: 0)
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 10)
+        }
+        .frame(width: width, height: knobDiameter + 56)
     }
 }
 
@@ -933,99 +1031,99 @@ struct VerticalSlider: View {
     @State private var isDragging = false
     
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(MixerPalette.panel)
-                    .overlay(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.10), .clear, .clear, Color.black.opacity(0.35)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                        .mask(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(MixerPalette.panel)
+                .overlay(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.10), .clear, .clear, Color.black.opacity(0.35)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
                     )
-                    .shadow(color: Color.black.opacity(0.30), radius: 4, x: 0, y: 4)
-                
-                GeometryReader { proxy in
-                    let W = proxy.size.width
-                    let H = proxy.size.height
-                    let topInset: CGFloat = 12
-                    let bottomInset: CGFloat = 12
-                    let handleH: CGFloat = 30
-                    let handleW: CGFloat = min(W * 0.80, 48)
-                    let slotW: CGFloat = min(14, W * 0.28)
+                    .mask(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                )
+                .shadow(color: Color.black.opacity(0.30), radius: 4, x: 0, y: 4)
+
+            GeometryReader { proxy in
+                let W = proxy.size.width
+                let H = proxy.size.height
+                let topInset: CGFloat = 12
+                let bottomInset: CGFloat = 38
+                let handleH: CGFloat = 30
+                let handleW: CGFloat = min(W * 0.80, 48)
+                let slotW: CGFloat = min(14, W * 0.28)
+
+                let minY = topInset
+                let maxY = H - bottomInset - handleH
+                let trackTopCenter = minY + handleH / 2
+                let trackBottomCenter = maxY + handleH / 2
+                let trackRange = trackBottomCenter - trackTopCenter
                     
-                    let minY = topInset
-                    let maxY = H - bottomInset - handleH
-                    let trackTopCenter = minY + handleH / 2
-                    let trackBottomCenter = maxY + handleH / 2
-                    let trackRange = trackBottomCenter - trackTopCenter
-                    
-                    // Value → position
-                    let t = CGFloat((value - range.lowerBound) / (range.upperBound - range.lowerBound))
-                    let yTop = (1 - t) * (maxY - minY) + minY
-                    let faderX = (W - handleW) / 2
-                    
-                    // Track
-                    RoundedRectangle(cornerRadius: slotW / 2, style: .continuous)
-                        .fill(MixerPalette.slot)
-                        .frame(width: slotW, height: H - topInset - bottomInset)
-                        .position(x: W / 2, y: H / 2)
-                        .overlay(RoundedRectangle(cornerRadius: slotW / 2).stroke(Color.white.opacity(0.08), lineWidth: 1))
-                        .shadow(color: Color.black.opacity(0.8), radius: 4)
-                    
-                    // Tick marks (0,3,6,10 + small)
-                    ForEach(0..<11, id: \.self) { i in
-                        let isMajor = (i % 3 == 0) || i == 10
-                        let tickLen: CGFloat = isMajor ? 10 : 6
-                        let tickY = trackTopCenter + (1 - CGFloat(i) / 10.0) * trackRange
-                        
-                        Rectangle()
-                            .fill(Color.white.opacity(isMajor ? 0.55 : 0.28))
-                            .frame(width: tickLen, height: 1)
-                            .position(x: (W / 2) - slotW / 2 - 6 - tickLen / 2, y: tickY)
-                        
-                        if [0, 3, 6, 10].contains(i) {
-                            Text("\(i)")
-                                .font(.system(size: 8, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.7))
-                                .position(x: (W / 2) - slotW / 2 - 18 - tickLen / 2, y: tickY - 5)
-                        }
+                // Value → position
+                let t = CGFloat((value - range.lowerBound) / (range.upperBound - range.lowerBound))
+                let yTop = (1 - t) * (maxY - minY) + minY
+                let faderX = (W - handleW) / 2
+
+                // Track
+                RoundedRectangle(cornerRadius: slotW / 2, style: .continuous)
+                    .fill(MixerPalette.slot)
+                    .frame(width: slotW, height: H - topInset - bottomInset)
+                    .position(x: W / 2, y: (trackTopCenter + trackBottomCenter) / 2)
+                    .overlay(RoundedRectangle(cornerRadius: slotW / 2).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.8), radius: 4)
+
+                // Tick marks (0,3,6,10 + small)
+                ForEach(0..<11, id: \.self) { i in
+                    let isMajor = (i % 3 == 0) || i == 10
+                    let tickLen: CGFloat = isMajor ? 10 : 6
+                    let tickY = trackTopCenter + (1 - CGFloat(i) / 10.0) * trackRange
+
+                    Rectangle()
+                        .fill(Color.white.opacity(isMajor ? 0.55 : 0.28))
+                        .frame(width: tickLen, height: 1)
+                        .position(x: (W / 2) - slotW / 2 - 6 - tickLen / 2, y: tickY)
+
+                    if [0, 3, 6, 10].contains(i) {
+                        Text("\(i)")
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.7))
+                            .position(x: (W / 2) - slotW / 2 - 18 - tickLen / 2, y: tickY - 5)
                     }
-                    
-                    // Fader handle (beveled cap)
-                    FaderHandle(color: color, pressed: isDragging)
-                        .frame(width: handleW, height: handleH)
-                        .offset(x: faderX, y: yTop)
-                        .shadow(color: .black.opacity(isDragging ? 0.25 : 0.45),
-                                radius: isDragging ? 2 : 3, x: 0, y: isDragging ? 1 : 2)
-                    
-                    // Drag anywhere within column
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { g in
-                                    let clamped = min(max(g.location.y, minY), maxY)
-                                    var nt = 1 - (clamped - minY) / (maxY - minY)
-                                    if let steps = stepCount, steps > 0 { nt = (round(nt * CGFloat(steps)) / CGFloat(steps)) }
-                                    value = min(range.upperBound,
-                                                max(range.lowerBound,
-                                                    range.lowerBound + Float(nt) * (range.upperBound - range.lowerBound)))
-                                    if !isDragging { isDragging = true }
-                                }
-                                .onEnded { _ in isDragging = false }
-                        )
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+
+                // Fader handle (beveled cap)
+                FaderHandle(color: color, pressed: isDragging)
+                    .frame(width: handleW, height: handleH)
+                    .offset(x: faderX, y: yTop)
+                    .shadow(color: .black.opacity(isDragging ? 0.25 : 0.45),
+                            radius: isDragging ? 2 : 3, x: 0, y: isDragging ? 1 : 2)
+
+                // Drag anywhere within column
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { g in
+                                let clamped = min(max(g.location.y, minY), maxY)
+                                var nt = 1 - (clamped - minY) / (maxY - minY)
+                                if let steps = stepCount, steps > 0 { nt = (round(nt * CGFloat(steps)) / CGFloat(steps)) }
+                                value = min(range.upperBound,
+                                            max(range.lowerBound,
+                                                range.lowerBound + Float(nt) * (range.upperBound - range.lowerBound)))
+                                if !isDragging { isDragging = true }
+                            }
+                            .onEnded { _ in isDragging = false }
+                    )
             }
-            .frame(width: width, height: height)
-            
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .frame(width: width, height: height)
+        .overlay(alignment: .bottom) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundColor(.white.opacity(0.9))
-                .frame(width: width)
+                .padding(.bottom, 8)
+                .allowsHitTesting(false)
         }
     }
 }
